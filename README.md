@@ -1,4 +1,4 @@
-# Setu HTTP Client ⚡
+<!-- # Setu HTTP Client ⚡
 
 > A fast, minimal, and modern HTTP client for **Node.js** and **browsers**, with built-in support for timeouts, retries, progress tracking, and streaming.
 
@@ -617,6 +617,169 @@ MIT © [Your Name](https://github.com/yourusername)
 - Inspired by the simplicity of `fetch` and the power of `axios`
 - Built with modern JavaScript features and TypeScript
 - Thanks to all contributors and users of this library
+
+---
+
+**Made with ❤️ for the JavaScript community** -->
+
+
+
+# Setu.js HTTP Client ⚡️
+
+> A fast, minimal, and modern HTTP client for **Node.js** and **browsers**, with built-in support for timeouts, retries, progress tracking, and streaming.
+
+---
+
+[![npm version](https://img.shields.io/npm/v/setu?color=%2300b894\&label=Install%20via%20npm\&style=flat-square)](https://www.npmjs.com/package/setu)
+[![Docs](https://img.shields.io/badge/📘%20View%20Docs-blue?style=flat-square)](https://yourdomain.com/docs)
+[![License](https://img.shields.io/npm/l/setu?style=flat-square)](https://github.com/yourusername/setu/blob/main/LICENSE)
+[![Bundle Size](https://img.shields.io/bundlephobia/minzip/setu?style=flat-square)](https://bundlephobia.com/package/setu)
+
+---
+
+## 📦 Installation
+
+```bash
+# Using npm
+npm install setu.js
+
+# Using yarn
+yarn add setu.js
+
+# Using pnpm
+pnpm add setu.js
+```
+
+## 🌉 What is Setu.js?
+
+**Setu** means "bridge" in Sanskrit — and that's exactly what it is.
+
+A tiny, isomorphic HTTP client that bridges the gap between frontend and backend environments with a consistent, modern API.
+
+Setu offers the:
+
+* 🧠 **Control** of low-level tools like `fetch` or `http.request`
+* ✨ **Simplicity** of high-level clients like `axios`
+* 🎯 With **zero dependencies** and a lightweight, ESM-first build
+
+## 🚀 Features
+
+✅ **Fully isomorphic** (runs in both browser & Node.js)
+✅ **Supports all HTTP methods**: GET, POST, PUT, PATCH, DELETE
+✅ **Built-in retry mechanism** (configurable delay and count)
+✅ **Built-in timeout support**
+✅ **Upload and download progress tracking**
+✅ **Stream support** in Node.js
+✅ **Lightweight, tree-shakable, and zero-dependency**
+✅ **Works without polyfills or global hacks**
+
+---
+
+## ⚡ Quick Examples
+
+### ▶️ GET Request
+
+```typescript
+import setu from 'setu.js';
+
+const res = await setu.get('https://api.example.com/users');
+console.log(res.data);
+```
+
+### 📤 POST Request with JSON
+
+```typescript
+await setu.post('/api/create', {
+  body: {
+    name: 'Chaitanya',
+    email: 'test@example.com',
+  },
+});
+```
+
+### 📁 File Upload with Progress
+
+```typescript
+const formData = new FormData();
+formData.append('file', selectedFile);
+
+await setu.post('/upload', {
+  body: formData,
+  onUploadProgress: ({ percent }) => {
+    console.log(`Progress: ${percent}%`);
+  }
+});
+```
+
+### 📅 Stream Download (Node.js)
+
+```typescript
+import fs from 'fs';
+import { pipeline } from 'stream/promises';
+import setu from 'setu.js';
+
+const response = await setu.get('https://example.com/file.zip', {
+  responseType: 'stream'
+});
+
+await pipeline(response.data, fs.createWriteStream('./file.zip'));
+```
+
+---
+
+## 📓 Complete Documentation
+
+See the full documentation at [**yourdomain.com/docs**](https://yourdomain.com/docs) for:
+
+* React / Frontend usage
+* Node.js file streaming
+* Retry, timeout, headers
+* File upload & download
+* Advanced configuration
+* Type-safe API calls
+
+---
+
+## 📊 Architecture Diagram
+
+```text
++------------------+            +--------------------+
+|     Browser      |  ====>     |                    |
+|     (React)|  setu.js         |     HTTP API       |
++------------------+            |  (Express, REST,   |
+                                |   Cloudinary, etc) |
++------------------+            +--------------------+
+|    Node.js        |  ====>    |                    |
+|   ( Backend)  |  setu.js      +--------------------+
++------------------+
+```
+
+Setu bridges frontend & backend requests using the same simple API.
+
+---
+
+## 💪 Contributing
+
+We welcome contributions from the community!
+
+* 💡 Found a bug? Open an [issue](https://github.com/chaitu426/setu/issues)
+* 🌱 Want to improve something? Submit a pull request
+* ⭐️ Like the project? Star it on [GitHub](https://github.com/chaitu426/setu)
+
+### Development Setup
+
+```bash
+git clone https://github.com/chaitu426/setu.git
+cd setu
+npm install
+npm run dev
+```
+
+---
+
+## 📄 License
+
+MIT © [chaitanya abhade](https://github.com/chaitu426)
 
 ---
 
