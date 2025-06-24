@@ -1,0 +1,41 @@
+{
+  "name": "setu.js",
+  "version": "1.1.0",
+  "description": "A lightweight, HTTP client for Node.js and browser.",
+  "author": "chaitanya abhade",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "import": "./dist/index.js",
+    "require": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node ./dist/dev.js",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "http",
+    "fetch",
+    "client",
+    "api",
+    "request",
+    "lightweight",
+    "typescript",
+    "browser",
+    "node"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "form-data": "^4.0.3"
+  }
+}

@@ -1,0 +1,6 @@
+# .npmignore
+src/
+dev.ts
+*.log
+node_modules/
+tsconfig.json
