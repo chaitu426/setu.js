@@ -3,22 +3,12 @@ import { defaults } from './defaults.js';
 
 const isBrowser = typeof window !== 'undefined' && typeof window.fetch === 'function';
 
-type Adapter = <T = any>(url: string, config?: HttpRequestConfig) => Promise<HttpResponse<T>>;
+type Adapter = <T = any>(
+  url: string,
+  config?: HttpRequestConfig
+) => Promise<HttpResponse<T>>;
 
-let adapter: Adapter;
-
-(async () =>{
-  if (isBrowser) {
-    const { browserAdapter } = await import('./browserAdapter.js');
-    adapter = browserAdapter;
-  } else {
-    const { coreRequest } = await import('./nodeAdapter.js');
-    adapter = coreRequest;
-  }
-})();
-
-// ✅ Define interface with function signature + methods
-interface SetuClient {
+export interface SetuClient {
   <T = any>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>>;
   get: <T = any>(url: string, config?: HttpRequestConfig) => Promise<HttpResponse<T>>;
   post: <T = any>(url: string, config?: HttpRequestConfig) => Promise<HttpResponse<T>>;
@@ -26,22 +16,61 @@ interface SetuClient {
   patch: <T = any>(url: string, config?: HttpRequestConfig) => Promise<HttpResponse<T>>;
   delete: <T = any>(url: string, config?: HttpRequestConfig) => Promise<HttpResponse<T>>;
   defaults: typeof defaults;
-
 }
 
-// ✅ Build base function
-const base: any = (url: string, config?: HttpRequestConfig) => adapter(url, config);
+let adapterPromise: Promise<Adapter> | null = null;
 
-// ✅ Attach methods
-base.get = (url: string, config?: HttpRequestConfig) => adapter(url, { ...config, method: 'GET' });
-base.post = (url: string, config?: HttpRequestConfig) => adapter(url, { ...config, method: 'POST' });
-base.put = (url: string, config?: HttpRequestConfig) => adapter(url, { ...config, method: 'PUT' });
-base.patch = (url: string, config?: HttpRequestConfig) => adapter(url, { ...config, method: 'PATCH' });
-base.delete = (url: string, config?: HttpRequestConfig) => adapter(url, { ...config, method: 'DELETE' });
+function loadAdapter(): Promise<Adapter> {
+  if (adapterPromise) return adapterPromise;
 
-base.defaults = defaults;
- 
+  adapterPromise = (async () => {
+    try {
+      if (isBrowser) {
+        const { browserAdapter } = await import('./browserAdapter.js');
+        if (typeof browserAdapter !== 'function') {
+          throw new Error('Invalid browser adapter');
+        }
+        return browserAdapter;
+      } else {
+        const { coreRequest } = await import('./nodeAdapter.js');
+        if (typeof coreRequest !== 'function') {
+          throw new Error('Invalid node adapter');
+        }
+        return coreRequest;
+      }
+    } catch (err) {
+      console.error('Failed to load adapter:', err);
+      throw err;
+    }
+  })();
 
-const setu: SetuClient = base;
+  return adapterPromise;
+}
 
-export default setu;
+const methodNames = ['get', 'post', 'put', 'patch', 'delete'];
+
+const setu = new Proxy(
+  {},
+  {
+    get(_, prop) {
+      if (prop === 'defaults') return defaults;
+
+      if (methodNames.includes(prop as string)) {
+        return async (url: string, config?: HttpRequestConfig) => {
+          const adapter = await loadAdapter();
+          return adapter(url, { ...config, method: (prop as string).toUpperCase() });
+        };
+      }
+
+      return async (url: string, config?: HttpRequestConfig) => {
+        const adapter = await loadAdapter();
+        return adapter(url, config);
+      };
+    },
+    apply(_, __, args: [string, HttpRequestConfig?]) {
+      return loadAdapter().then((adapter) => adapter(...args));
+    },
+  }
+);
+
+export default setu as unknown as SetuClient;

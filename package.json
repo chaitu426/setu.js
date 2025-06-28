@@ -1,6 +1,6 @@
 {
   "name": "setu.js",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A lightweight, HTTP client for Node.js and browser.",
   "author": "chaitanya abhade",
   "license": "MIT",

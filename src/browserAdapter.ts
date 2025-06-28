@@ -8,6 +8,7 @@ export function browserAdapter<T = any>(
     onDownloadProgress?: (progress: { loaded: number; total?: number; percent: number }) => void;
     retries?: number;
     retryDelay?: number;
+    validateStatus?: (status: number) => boolean;
   } = {}
 ): Promise<HttpResponse<T>> {
   const makeRequest = (attempt: number): Promise<HttpResponse<T>> => {
@@ -15,7 +16,7 @@ export function browserAdapter<T = any>(
       const method = (config.method || 'GET').toUpperCase();
       const isGetLike = ['GET', 'HEAD'].includes(method);
 
-      // ✅ Merge query params from config.params and url
+      // Merge query params
       const [baseUrl, existingQuery] = url.split('?');
       const combinedParams = new URLSearchParams(existingQuery || '');
       if (config.params) {
@@ -36,26 +37,25 @@ export function browserAdapter<T = any>(
       if (config.signal) {
         config.signal.addEventListener('abort', () => {
           xhr.abort();
-          reject(new Error('Request aborted'));
+          reject(buildError('Request aborted', config, 'ECONNABORTED', xhr));
         });
       }
 
       const isFormData = config.body instanceof FormData;
       const isJSON = typeof config.body === 'object' && !isFormData;
 
-      // ✅ Headers setup
+      // Set headers
       if (config.headers) {
         for (const key in config.headers) {
           xhr.setRequestHeader(key, config.headers[key]);
         }
       }
 
-      // ⚠️ Set Content-Type only if not FormData
       if (!isFormData && isJSON && !config.headers?.['Content-Type']) {
         xhr.setRequestHeader('Content-Type', 'application/json');
       }
 
-      // 📤 Upload progress
+      // Upload progress
       if (xhr.upload && config.onUploadProgress) {
         xhr.upload.onprogress = (event) => {
           const percent = event.lengthComputable
@@ -69,7 +69,7 @@ export function browserAdapter<T = any>(
         };
       }
 
-      // 📥 Download progress
+      // Download progress
       if (config.onDownloadProgress) {
         xhr.onprogress = (event) => {
           if (event.lengthComputable) {
@@ -82,64 +82,52 @@ export function browserAdapter<T = any>(
         };
       }
 
+      // Success
       xhr.onload = () => {
-        const headers: Record<string, string> = {};
-        xhr.getAllResponseHeaders().trim().split(/[\r\n]+/).forEach(line => {
-          const parts = line.split(': ');
-          const header = parts.shift();
-          const value = parts.join(': ');
-          if (header) headers[header.toLowerCase()] = value;
-        });
-
+        const headers = parseHeaders(xhr.getAllResponseHeaders());
         const contentType = xhr.getResponseHeader('Content-Type') || '';
-        const disposition = xhr.getResponseHeader('Content-Disposition') || '';
+        const status = xhr.status;
 
-        let filename: string | undefined;
-        const match = /filename[^;=\n]*=(['"]?)([^'"\n]*)\1/.exec(disposition);
-        if (match) filename = decodeURIComponent(match[2]);
-
-        let data: any;
-        if (xhr.responseType === 'blob' || contentType.includes('application/octet-stream')) {
-          data = xhr.response;
-        } else if (contentType.includes('application/json')) {
-          try {
-            data = JSON.parse(xhr.responseText);
-          } catch {
-            return reject(new Error('Failed to parse JSON'));
-          }
-        } else {
-          data = xhr.responseText;
-        }
-
-        resolve({
-          status: xhr.status,
+        const response: HttpResponse<T> = {
+          status,
           headers,
-          data,
-          ...(filename ? { filename } : {}),
-        } as HttpResponse<T> & { filename?: string });
+          data: parseResponse(xhr, contentType),
+          ...(extractFilename(xhr) ? { filename: extractFilename(xhr) } : {}),
+        };
+
+        const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
+
+        if (validateStatus(status)) {
+          resolve(response);
+        } else {
+          reject(buildError(
+            `Request failed with status code ${status}`,
+            config,
+            null,
+            xhr,
+            response,
+            status
+          ));
+        }
       };
 
+      // Network error
       xhr.onerror = () => {
         if (attempt < (config.retries || 0)) {
-          setTimeout(() => {
-            makeRequest(attempt + 1).then(resolve).catch(reject);
-          }, config.retryDelay || 500);
-        } else {
-          reject(new Error('Network error'));
+          return retryRequest();
         }
+        reject(buildError('Network error', config, 'ERR_NETWORK', xhr));
       };
 
+      // Timeout
       xhr.ontimeout = () => {
         if (attempt < (config.retries || 0)) {
-          setTimeout(() => {
-            makeRequest(attempt + 1).then(resolve).catch(reject);
-          }, config.retryDelay || 500);
-        } else {
-          reject(new Error('Request timed out'));
+          return retryRequest();
         }
+        reject(buildError(`Timeout of ${xhr.timeout}ms exceeded`, config, 'ECONNABORTED', xhr));
       };
 
-      // ✅ Send the body
+      // Send body
       if (isGetLike) {
         xhr.send();
       } else if (isFormData) {
@@ -149,8 +137,64 @@ export function browserAdapter<T = any>(
       } else {
         xhr.send();
       }
+
+      function retryRequest() {
+        setTimeout(() => {
+          makeRequest(attempt + 1).then(resolve).catch(reject);
+        }, config.retryDelay || 500);
+      }
     });
   };
 
   return makeRequest(0);
+}
+
+// ----------------------
+// ✅ Utilities
+// ----------------------
+
+function buildError(
+  message: string,
+  config: HttpRequestConfig,
+  code: string | null,
+  request: XMLHttpRequest,
+  response?: any,
+  status?: number
+) {
+  const error = new Error(message) as any;
+  error.config = config;
+  error.code = code;
+  error.request = request;
+  if (response) error.response = response;
+  if (status) error.status = status;
+  return error;
+}
+
+function parseHeaders(headerStr: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  headerStr.trim().split(/[\r\n]+/).forEach(line => {
+    const [key, ...rest] = line.split(': ');
+    if (key) headers[key.toLowerCase()] = rest.join(': ');
+  });
+  return headers;
+}
+
+function parseResponse(xhr: XMLHttpRequest, contentType: string) {
+  if (xhr.responseType === 'blob' || contentType.includes('application/octet-stream')) {
+    return xhr.response;
+  } else if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(xhr.responseText);
+    } catch {
+      throw new Error('Failed to parse JSON response');
+    }
+  } else {
+    return xhr.responseText;
+  }
+}
+
+function extractFilename(xhr: XMLHttpRequest): string | undefined {
+  const disposition = xhr.getResponseHeader('Content-Disposition') || '';
+  const match = /filename[^;=\n]*=(['"]?)([^'"\n]*)\1/.exec(disposition);
+  return match ? decodeURIComponent(match[2]) : undefined;
 }

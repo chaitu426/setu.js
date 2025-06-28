@@ -11,6 +11,7 @@ export interface HttpRequestConfig {
 
   onUploadProgress?: (progress: { loaded: number; total?: number; percent: number }) => void;
   onDownloadProgress?: (progress: { loaded: number; total?: number; percent: number }) => void;
+  validateStatus?: (status: number) => boolean; // Added validateStatus property
 }
 
 export interface HttpResponse<T = any> {

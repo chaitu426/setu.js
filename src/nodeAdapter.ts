@@ -12,7 +12,7 @@ function delay(ms: number): Promise<void> {
 
 function isBinaryContentType(contentType: string): boolean {
   return /(application|image|audio|video|octet-stream)/i.test(contentType) &&
-         !/json|text|xml/i.test(contentType);
+    !/json|text|xml/i.test(contentType);
 }
 
 export async function coreRequest<T = any>(
@@ -49,7 +49,7 @@ function makeRequest<T>(url: string, config: HttpRequestConfig): Promise<HttpRes
 
     if (body instanceof FormData) {
       isForm = true;
-      Object.assign(headers, body.getHeaders()); // Don't set Content-Length manually
+      Object.assign(headers, body.getHeaders());
     } else if (body && typeof body === 'object' && !(body instanceof Buffer)) {
       body = JSON.stringify(body);
       headers['Content-Type'] = headers['Content-Type'] || 'application/json';
@@ -66,7 +66,6 @@ function makeRequest<T>(url: string, config: HttpRequestConfig): Promise<HttpRes
       const total = parseInt(res.headers['content-length'] || '0');
       let downloaded = 0;
 
-      // ✅ Stream Response
       if (config.responseType === 'stream') {
         return resolve({
           status: res.statusCode || 200,
@@ -95,51 +94,76 @@ function makeRequest<T>(url: string, config: HttpRequestConfig): Promise<HttpRes
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
         const contentType = res.headers['content-type'] || '';
+        const status = res.statusCode || 200;
+
         let parsed: any;
-
         const isBinary = config.responseType === 'blob' ||
-                         config.responseType === 'arraybuffer' ||
-                         isBinaryContentType(contentType);
+          config.responseType === 'arraybuffer' ||
+          isBinaryContentType(contentType);
 
-        if (isBinary) {
-          parsed = buffer;
-        } else if (contentType.includes('application/json')) {
-          try {
+        try {
+          if (isBinary) {
+            parsed = buffer;
+          } else if (contentType.includes('application/json')) {
             parsed = JSON.parse(buffer.toString('utf-8'));
-          } catch (e) {
+          } else {
             parsed = buffer.toString('utf-8');
           }
-        } else {
-          parsed = buffer.toString('utf-8');
+        } catch (err) {
+          return reject(buildError('Failed to parse response', config, null, req, {
+            status,
+            headers: res.headers,
+            data: buffer.toString('utf-8'),
+          }, status));
         }
 
-        resolve({
-          status: res.statusCode || 200,
+        const response: HttpResponse<T> = {
+          status,
           headers: res.headers as any,
           data: parsed as T,
-        });
+        };
+
+        const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
+
+        if (validateStatus(status)) {
+          resolve(response);
+        } else {
+          reject(buildError(
+            `Request failed with status code ${status}`,
+            config,
+            null,
+            req,
+            response,
+            status
+          ));
+        }
       });
 
-      res.on('error', reject);
+      res.on('error', (err) => {
+        reject(buildError('Response stream error', config, 'ERR_RESPONSE', req, null));
+      });
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      reject(buildError(err.message, config, 'ERR_NETWORK', req));
+    });
+
+    const timeout = reqOptions.timeout || defaults.timeout;
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('Request timed out'));
+      reject(buildError(`Timeout of ${timeout}ms exceeded`, config, 'ECONNABORTED', req));
     });
 
     if (config.signal) {
       config.signal.addEventListener('abort', () => {
         req.destroy();
-        reject(new Error('Request aborted'));
+        reject(buildError('Request aborted', config, 'ECONNABORTED', req));
       });
     }
 
-    // ✅ Write Body
+    // Upload body
     if (isForm) {
       let uploaded = 0;
-
       body.on('data', (chunk: Buffer) => {
         uploaded += chunk.length;
         config.onUploadProgress?.({
@@ -149,7 +173,10 @@ function makeRequest<T>(url: string, config: HttpRequestConfig): Promise<HttpRes
         });
       });
 
-      body.on('error', reject);
+      body.on('error', (err: Error) => {
+        reject(buildError(err.message, config, 'ERR_UPLOAD_STREAM', req));
+      });
+
       body.pipe(req);
     } else if (body) {
       req.write(body);
@@ -158,4 +185,22 @@ function makeRequest<T>(url: string, config: HttpRequestConfig): Promise<HttpRes
       req.end();
     }
   });
+}
+
+// ✅ Structured error generator
+function buildError(
+  message: string,
+  config: HttpRequestConfig,
+  code: string | null,
+  request: any,
+  response?: any,
+  status?: number
+) {
+  const error = new Error(message) as any;
+  error.config = config;
+  error.code = code;
+  error.request = request;
+  if (response) error.response = response;
+  if (status) error.status = status;
+  return error;
 }
