@@ -1,14 +1,17 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "declaration": true,
-    "moduleResolution": "node",
-    "types": ["node"],                // ✅ Include Node.js types
-    "esModuleInterop": true,
-    "strict": true,
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "target": "ES2022",                     // Modern JS target
+    "module": "ES2022",                     // Keep ESM output
+    "moduleResolution": "node",             // Use Node-style resolution
+    "declaration": true,                    // Generate `.d.ts` types
+    "declarationDir": "./dist",             // Optional, keeps `.d.ts` cleanly in dist
+    "outDir": "./dist",                     // Output directory
+    "rootDir": "./src",                     // Source directory
+    "esModuleInterop": true,                // For `require()` interop
+    "strict": true,                         // Enable all strict checks
+    "skipLibCheck": true,                   // Skip checking `.d.ts` from node_modules
+    "types": ["node"],                      // Needed for Node globals like `process`
+    "forceConsistentCasingInFileNames": true // Avoid Windows/macOS file mismatch issues
   },
   "include": ["src"]
 }

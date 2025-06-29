@@ -1,21 +1,27 @@
 {
   "name": "setu.js",
-  "version": "1.2.0",
-  "description": "A lightweight, HTTP client for Node.js and browser.",
-  "author": "chaitanya abhade",
+  "version": "1.4.2",
+  "description": "A lightweight HTTP client for Node.js and the browser, with smart adapter selection.",
+  "author": "Chaitanya Abhade",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/node/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    "import": "./dist/index.js",
-    "require": "./dist/index.js"
+    "import": {
+      "node": "./dist/node/index.js",
+      "default": "./dist/browser/index.js"
+    },
+    "require": {
+      "node": "./dist/node/index.cjs",
+      "default": "./dist/browser/index.cjs"
+    }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && echo '\nBuild complete ✅'",
     "dev": "tsc --watch",
     "test": "node ./dist/dev.js",
     "prepare": "npm run build"
@@ -23,17 +29,19 @@
   "keywords": [
     "http",
     "fetch",
+    "axios-alternative",
     "client",
     "api",
     "request",
     "lightweight",
     "typescript",
     "browser",
-    "node"
+    "node",
+    "setu"
   ],
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.4.0"
   },
   "dependencies": {
     "form-data": "^4.0.3"

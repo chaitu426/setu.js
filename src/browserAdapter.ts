@@ -194,7 +194,9 @@ function parseResponse(xhr: XMLHttpRequest, contentType: string) {
 }
 
 function extractFilename(xhr: XMLHttpRequest): string | undefined {
-  const disposition = xhr.getResponseHeader('Content-Disposition') || '';
+  const disposition = xhr.getResponseHeader('Content-Disposition');
+  if (!disposition) return undefined;
+
   const match = /filename[^;=\n]*=(['"]?)([^'"\n]*)\1/.exec(disposition);
   return match ? decodeURIComponent(match[2]) : undefined;
 }
