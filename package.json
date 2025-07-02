@@ -1,6 +1,6 @@
 {
   "name": "setu.js",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "A lightweight HTTP client for Node.js and the browser, with smart adapter selection.",
   "author": "Chaitanya Abhade",
   "license": "MIT",
@@ -13,8 +13,8 @@
       "default": "./dist/browser/index.js"
     },
     "require": {
-      "node": "./dist/node/index.cjs",
-      "default": "./dist/browser/index.cjs"
+      "node": "./dist/node/index.js",
+      "default": "./dist/browser/index.js"
     }
   },
   "files": [

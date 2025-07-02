@@ -4,6 +4,7 @@
     "module": "ES2022",                     // Keep ESM output
     "moduleResolution": "node",             // Use Node-style resolution
     "declaration": true,                    // Generate `.d.ts` types
+    "sourceMap": true,
     "declarationDir": "./dist",             // Optional, keeps `.d.ts` cleanly in dist
     "outDir": "./dist",                     // Output directory
     "rootDir": "./src",                     // Source directory
