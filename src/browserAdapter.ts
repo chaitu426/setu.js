@@ -92,7 +92,8 @@ export function browserAdapter<T = any>(
           status,
           headers,
           data: parseResponse(xhr, contentType),
-          ...(extractFilename(xhr) ? { filename: extractFilename(xhr) } : {}),
+          ...(safeExtractFilename(xhr) ? { filename: safeExtractFilename(xhr) } : {}),
+
         };
 
         const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
@@ -193,10 +194,15 @@ function parseResponse(xhr: XMLHttpRequest, contentType: string) {
   }
 }
 
-function extractFilename(xhr: XMLHttpRequest): string | undefined {
-  const disposition = xhr.getResponseHeader('Content-Disposition');
-  if (!disposition) return undefined;
-
-  const match = /filename[^;=\n]*=(['"]?)([^'"\n]*)\1/.exec(disposition);
-  return match ? decodeURIComponent(match[2]) : undefined;
+function safeExtractFilename(xhr: XMLHttpRequest): string | undefined {
+  try {
+    const disposition = xhr.getResponseHeader('Content-Disposition');
+    if (!disposition) return undefined;
+    const match = /filename[^;=\n]*=(['"]?)([^'"\n]*)\1/.exec(disposition);
+    return match ? decodeURIComponent(match[2]) : undefined;
+  } catch {
+    // Access will throw in browser unless the server exposes this header
+    return undefined;
+  }
 }
+
