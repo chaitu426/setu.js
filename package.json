@@ -24,7 +24,9 @@
     "build": "tsc && echo '\nBuild complete ✅'",
     "dev": "tsc --watch",
     "test": "node ./dist/dev.js",
-    "prepare": "npm run build"
+    "prepare": "husky",
+    "benchmark": "npm run build && node benchmark/index.js",
+    "benchmark:server": "node benchmark/test-server.js"
   },
   "keywords": [
     "http",
@@ -41,7 +43,13 @@
   ],
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.4.0"
+    "@types/node-fetch": "^2.6.13",
+    "axios": "^1.13.2",
+    "got": "^14.6.5",
+    "husky": "^9.1.7",
+    "node-fetch": "^3.3.2",
+    "typescript": "^5.4.0",
+    "undici": "^7.16.0"
   },
   "dependencies": {
     "form-data": "^4.0.3"

@@ -6,8 +6,6 @@ export function browserAdapter<T = any>(
   config: HttpRequestConfig & {
     onUploadProgress?: (progress: { loaded: number; total?: number; percent: number }) => void;
     onDownloadProgress?: (progress: { loaded: number; total?: number; percent: number }) => void;
-    retries?: number;
-    retryDelay?: number;
     validateStatus?: (status: number) => boolean;
   } = {}
 ): Promise<HttpResponse<T>> {
@@ -17,32 +15,76 @@ export function browserAdapter<T = any>(
       const isGetLike = ['GET', 'HEAD'].includes(method);
 
       // Merge query params
-      const [baseUrl, existingQuery] = url.split('?');
+      // Handle URL with hash fragments - split on '?' but preserve hash
+      const urlParts = url.split('#');
+      const urlWithoutHash = urlParts[0];
+      const hash = urlParts.length > 1 ? '#' + urlParts.slice(1).join('#') : '';
+      
+      const [baseUrl, existingQuery] = urlWithoutHash.split('?');
       const combinedParams = new URLSearchParams(existingQuery || '');
       if (config.params) {
         Object.entries(config.params).forEach(([key, value]) => {
-          combinedParams.set(key, value as string);
+          // Handle null, undefined, and complex objects
+          if (value === null || value === undefined) {
+            combinedParams.set(key, '');
+          } else if (typeof value === 'object') {
+            combinedParams.set(key, JSON.stringify(value));
+          } else {
+            combinedParams.set(key, String(value));
+          }
         });
       }
-      const finalUrl =
-        (baseUrl.startsWith('http') ? baseUrl : defaults.baseURL + baseUrl) +
-        (combinedParams.toString() ? '?' + combinedParams.toString() : '');
+      
+      // Build final URL - handle empty baseURL edge case
+      let finalBaseUrl = baseUrl;
+      if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+        if (defaults.baseURL) {
+          // Ensure proper joining (remove trailing/leading slashes appropriately)
+          const base = defaults.baseURL.endsWith('/') ? defaults.baseURL.slice(0, -1) : defaults.baseURL;
+          const path = baseUrl.startsWith('/') ? baseUrl : '/' + baseUrl;
+          finalBaseUrl = base + path;
+        } else if (!baseUrl.startsWith('/')) {
+          // Relative URL without baseURL - keep as is
+          finalBaseUrl = baseUrl;
+        }
+      }
+      
+      const queryString = combinedParams.toString();
+      const finalUrl = finalBaseUrl + (queryString ? '?' + queryString : '') + hash;
 
       const xhr = new XMLHttpRequest();
       xhr.open(method, finalUrl, true);
 
       if (config.timeout) xhr.timeout = config.timeout;
-      if (config.responseType === 'blob') xhr.responseType = 'blob';
+      // Handle different response types
+      if (config.responseType === 'blob') {
+        xhr.responseType = 'blob';
+      } else if (config.responseType === 'arraybuffer') {
+        xhr.responseType = 'arraybuffer';
+      } else if (config.responseType === 'text' || !config.responseType) {
+        xhr.responseType = 'text';
+      }
+      // 'json' and 'document' are handled via responseType='text' and manual parsing
 
+      // Track abort handler for cleanup
+      let abortHandler: (() => void) | null = null;
       if (config.signal) {
-        config.signal.addEventListener('abort', () => {
+        abortHandler = () => {
           xhr.abort();
           reject(buildError('Request aborted', config, 'ECONNABORTED', xhr));
-        });
+        };
+        config.signal.addEventListener('abort', abortHandler);
       }
 
       const isFormData = config.body instanceof FormData;
-      const isJSON = typeof config.body === 'object' && !isFormData;
+      // Fix: null is typeof 'object' in JavaScript, need explicit check
+      const isJSON = config.body !== null && 
+                     config.body !== undefined && 
+                     typeof config.body === 'object' && 
+                     !isFormData &&
+                     !Array.isArray(config.body) &&
+                     !(config.body instanceof Date) &&
+                     !(config.body instanceof RegExp);
 
       // Set headers
       if (config.headers) {
@@ -82,18 +124,43 @@ export function browserAdapter<T = any>(
         };
       }
 
+      // Track if request is already handled to prevent race conditions
+      let isHandled = false;
+
       // Success
       xhr.onload = () => {
+        if (isHandled) return;
+        isHandled = true;
+        
+        // Clean up abort listener
+        if (config.signal && abortHandler) {
+          config.signal.removeEventListener('abort', abortHandler);
+        }
+        
         const headers = parseHeaders(xhr.getAllResponseHeaders());
         const contentType = xhr.getResponseHeader('Content-Type') || '';
         const status = xhr.status;
 
+        let responseData: any;
+        try {
+          responseData = parseResponse(xhr, contentType);
+        } catch (parseError: any) {
+          return reject(buildError(
+            parseError.message || 'Failed to parse response',
+            config,
+            'ERR_PARSE',
+            xhr,
+            { status, headers, data: xhr.responseText },
+            status
+          ));
+        }
+
+        const filename = safeExtractFilename(xhr);
         const response: HttpResponse<T> = {
           status,
           headers,
-          data: parseResponse(xhr, contentType),
-          ...(safeExtractFilename(xhr) ? { filename: safeExtractFilename(xhr) } : {}),
-
+          data: responseData,
+          ...(filename ? { filename } : {}),
         };
 
         const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
@@ -111,10 +178,20 @@ export function browserAdapter<T = any>(
           ));
         }
       };
-
+      
       // Network error
       xhr.onerror = () => {
-        if (attempt < (config.retries || 0)) {
+        if (isHandled) return;
+        isHandled = true;
+        
+        // Clean up abort listener
+        if (config.signal && abortHandler) {
+          config.signal.removeEventListener('abort', abortHandler);
+        }
+        
+        // Use retry (singular) to match interface, fallback to retries for backward compat
+        const retryCount = config.retry ?? (config as any).retries ?? 0;
+        if (attempt < retryCount) {
           return retryRequest();
         }
         reject(buildError('Network error', config, 'ERR_NETWORK', xhr));
@@ -122,7 +199,17 @@ export function browserAdapter<T = any>(
 
       // Timeout
       xhr.ontimeout = () => {
-        if (attempt < (config.retries || 0)) {
+        if (isHandled) return;
+        isHandled = true;
+        
+        // Clean up abort listener
+        if (config.signal && abortHandler) {
+          config.signal.removeEventListener('abort', abortHandler);
+        }
+        
+        // Use retry (singular) to match interface, fallback to retries for backward compat
+        const retryCount = config.retry ?? (config as any).retries ?? 0;
+        if (attempt < retryCount) {
           return retryRequest();
         }
         reject(buildError(`Timeout of ${xhr.timeout}ms exceeded`, config, 'ECONNABORTED', xhr));
@@ -140,9 +227,17 @@ export function browserAdapter<T = any>(
       }
 
       function retryRequest() {
+        // Abort current request before retrying to prevent memory leaks
+        xhr.abort();
+        
+        // Clean up abort listener
+        if (config.signal && abortHandler) {
+          config.signal.removeEventListener('abort', abortHandler);
+        }
+        
         setTimeout(() => {
           makeRequest(attempt + 1).then(resolve).catch(reject);
-        }, config.retryDelay || 500);
+        }, config.retryDelay ?? 500);
       }
     });
   };
@@ -181,17 +276,35 @@ function parseHeaders(headerStr: string): Record<string, string> {
 }
 
 function parseResponse(xhr: XMLHttpRequest, contentType: string) {
-  if (xhr.responseType === 'blob' || contentType.includes('application/octet-stream')) {
+  // Handle blob and arraybuffer response types
+  if (xhr.responseType === 'blob' || xhr.responseType === 'arraybuffer') {
     return xhr.response;
-  } else if (contentType.includes('application/json')) {
-    try {
-      return JSON.parse(xhr.responseText);
-    } catch {
-      throw new Error('Failed to parse JSON response');
-    }
-  } else {
+  }
+  
+  // Handle binary content
+  if (contentType.includes('application/octet-stream') || 
+      contentType.includes('application/pdf') ||
+      /^(image|audio|video)\//.test(contentType)) {
+    // For binary content with text responseType, return as-is
+    // User should set responseType='blob' or 'arraybuffer' for proper handling
     return xhr.responseText;
   }
+  
+  // Handle JSON
+  if (contentType.includes('application/json') || contentType.includes('application/vnd.api+json')) {
+    try {
+      // Handle empty response
+      if (!xhr.responseText || xhr.responseText.trim() === '') {
+        return null;
+      }
+      return JSON.parse(xhr.responseText);
+    } catch (parseError) {
+      throw new Error(`Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+    }
+  }
+  
+  // Default: return text
+  return xhr.responseText;
 }
 
 function safeExtractFilename(xhr: XMLHttpRequest): string | undefined {
